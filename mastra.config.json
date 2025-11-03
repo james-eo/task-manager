@@ -1,24 +1,13 @@
 {
-  "version": "0.1.0",
   "name": "task-manager",
-  "description": "A smart task tracking assistant built with Mastra",
   "agents": {
     "taskTracker": {
       "name": "TaskTracker Agent",
-      "description": "Smart task tracking and project management assistant",
-      "instructions": "You are a helpful task tracking assistant that helps users manage their projects and deadlines efficiently.",
+      "description": "Smart task tracking assistant",
       "model": {
         "provider": "groq",
         "name": "llama-3.1-70b-versatile"
       }
-    }
-  },
-  "tools": [],
-  "workflows": [],
-  "integrations": {
-    "telex": {
-      "enabled": true,
-      "endpoint": "/a2a/agent/taskTracker"
     }
   }
 }

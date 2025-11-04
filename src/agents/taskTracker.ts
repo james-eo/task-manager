@@ -50,19 +50,56 @@ export class TaskTrackerAgent {
     const { userId } = context;
     const userTaskList = userTasks.get(userId) || [];
 
-    // Simple command parsing
+    // Enhanced command parsing with more flexible patterns
     const command = content.toLowerCase().trim();
 
-    if (command.includes("create task")) {
-      return this.createTask(command, userId);
-    } else if (command.includes("list tasks")) {
+    // Check for task creation patterns
+    if (
+      command.includes("create") &&
+      (command.includes("task") || command.includes("todo"))
+    ) {
+      return await this.createTask(command, userId);
+    } else if (
+      command.includes("list") &&
+      (command.includes("task") || command.includes("todo"))
+    ) {
       return this.listTasks(userId);
-    } else if (command.includes("complete task")) {
+    } else if (
+      command.includes("complete") &&
+      (command.includes("task") || command.includes("todo"))
+    ) {
       return this.completeTask(command, userId);
-    } else if (command.includes("delete task")) {
+    } else if (
+      command.includes("delete") &&
+      (command.includes("task") || command.includes("todo"))
+    ) {
       return this.deleteTask(command, userId);
     } else if (command.includes("help")) {
       return this.getHelp();
+    } else if (
+      command.includes("add") &&
+      (command.includes("task") || command.includes("todo"))
+    ) {
+      // Handle "add task" pattern
+      return await this.createTask(command, userId);
+    } else if (
+      command.includes("new") &&
+      (command.includes("task") || command.includes("todo"))
+    ) {
+      // Handle "new task" pattern
+      return await this.createTask(command, userId);
+    } else if (
+      command.includes("make") &&
+      (command.includes("task") || command.includes("todo"))
+    ) {
+      // Handle "make a task" pattern
+      return await this.createTask(command, userId);
+    } else if (
+      command.includes("show") &&
+      (command.includes("task") || command.includes("todo"))
+    ) {
+      // Handle "show tasks" pattern
+      return this.listTasks(userId);
     } else {
       // Use Mastra agent for natural language processing
       try {
@@ -88,15 +125,34 @@ export class TaskTrackerAgent {
     }
   }
 
-  private createTask(command: string, userId: string): string {
-    const titleMatch = command.match(/create task (.+)/);
-    if (!titleMatch) {
-      return "Please specify a task title. Example: 'create task Review project proposal'";
+  private async createTask(command: string, userId: string): Promise<string> {
+    // Enhanced pattern matching for natural language task creation
+    let title = "";
+
+    // Try various patterns to extract task title
+    const patterns = [
+      /create\s+(?:a\s+)?task\s+(?:for\s+)?(.+)/i,
+      /add\s+(?:a\s+)?task\s+(?:for\s+)?(.+)/i,
+      /new\s+task\s+(?:for\s+)?(.+)/i,
+      /make\s+(?:a\s+)?task\s+(?:for\s+)?(.+)/i,
+      /(?:create|add|make)\s+(.+)(?:\s+task|\s+todo)/i,
+    ];
+
+    for (const pattern of patterns) {
+      const match = command.match(pattern);
+      if (match) {
+        title = match[1];
+        break;
+      }
     }
 
-    let title = titleMatch[1];
+    if (!title) {
+      return "Please specify a task title. Example: 'create task Review project proposal' or 'create a task for the dev meeting'";
+    }
+
     let priority: "low" | "medium" | "high" | "urgent" = "medium";
     let dueDate: string | undefined;
+    let description: string | undefined;
 
     // Extract priority from command
     const priorityMatch = title.match(
@@ -113,7 +169,7 @@ export class TaskTrackerAgent {
         .trim();
     }
 
-    // Extract due date from command (simple format: "due tomorrow", "due 2025-11-05")
+    // Extract due date from command
     const dueDateMatch = title.match(/\s+due\s+(.+?)(?:\s|$)/i);
     if (dueDateMatch) {
       const dueDateStr = dueDateMatch[1];
@@ -129,9 +185,74 @@ export class TaskTrackerAgent {
       title = title.replace(/\s+due\s+.+?(?:\s|$)/i, "").trim();
     }
 
+    // Use AI to intelligently enhance task details if they seem incomplete
+    if (title.length < 5 || (!dueDate && !priorityMatch)) {
+      try {
+        const enhancementPrompt = `
+Given this task request: "${command}"
+
+Please enhance this task with intelligent defaults:
+1. Clean and improve the title if needed
+2. Suggest an appropriate priority (low/medium/high/urgent) based on keywords
+3. Suggest a reasonable due date if context clues exist
+4. Generate a helpful description
+
+Current extracted:
+- Title: "${title}"
+- Priority: "${priority}"
+- Due Date: ${dueDate || "none"}
+
+Respond in this exact JSON format:
+{
+  "title": "enhanced title",
+  "priority": "low|medium|high|urgent", 
+  "dueDate": "YYYY-MM-DD or null",
+  "description": "helpful description or null"
+}
+
+Guidelines:
+- Meeting/call tasks: usually urgent/high priority, often today/tomorrow
+- Review/research tasks: usually medium priority, within a week
+- Learning/reading tasks: usually low/medium priority, flexible timing
+- Urgent keywords: ASAP, urgent, emergency, critical, deadline
+- Project names suggest medium/high priority
+- If no time clues, suggest reasonable defaults based on task type
+`;
+
+        const enhancementResult = await this.agent.generate([
+          {
+            role: "user",
+            content: enhancementPrompt,
+          },
+        ]);
+
+        try {
+          const enhanced = JSON.parse(enhancementResult.text || "{}");
+          if (enhanced.title) title = enhanced.title;
+          if (
+            enhanced.priority &&
+            ["low", "medium", "high", "urgent"].includes(enhanced.priority)
+          ) {
+            priority = enhanced.priority;
+          }
+          if (enhanced.dueDate && enhanced.dueDate !== "null") {
+            dueDate = enhanced.dueDate;
+          }
+          if (enhanced.description && enhanced.description !== "null") {
+            description = enhanced.description;
+          }
+        } catch (parseError) {
+          console.log("Could not parse AI enhancement, using extracted values");
+        }
+      } catch (error) {
+        console.log("AI enhancement failed, using extracted values");
+      }
+    }
+
     const newTask: Task = {
       id: Date.now().toString(),
       title,
+      description,
       status: "pending",
       priority,
       dueDate,
@@ -152,9 +273,11 @@ export class TaskTrackerAgent {
         : priority === "medium"
         ? "🟡"
         : "🟢";
-    const dueDateText = dueDate ? `\nDue: ${dueDate}` : "";
 
-    return `✅ Task created successfully!\n**${title}** (ID: ${newTask.id})\nStatus: Pending | Priority: ${priority} ${priorityEmoji}${dueDateText}`;
+    const dueDateText = dueDate ? `\nDue: ${dueDate}` : "";
+    const descriptionText = description ? `\nDescription: ${description}` : "";
+
+    return `✅ Task created successfully!\n**${title}** (ID: ${newTask.id})\nStatus: Pending | Priority: ${priority} ${priorityEmoji}${dueDateText}${descriptionText}`;
   }
 
   private listTasks(userId: string): string {

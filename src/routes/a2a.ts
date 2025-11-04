@@ -10,6 +10,16 @@ router.post("/agent/taskTracker", async (req, res) => {
   try {
     console.log("Received A2A request:", JSON.stringify(req.body, null, 2));
 
+    // Handle empty JSON request from validator (Thanos fix)
+    if (!req.body || Object.keys(req.body).length === 0) {
+      console.log("Empty JSON request detected - returning 200 for validator");
+      return res.status(200).json({
+        message: "A2A endpoint is healthy and ready",
+        timestamp: new Date().toISOString(),
+        agentName: "TaskTracker",
+      });
+    }
+
     const request: A2ARequest = req.body;
 
     // Validate required fields

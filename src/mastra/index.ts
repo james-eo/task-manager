@@ -1,22 +1,26 @@
-import { Mastra } from "@mastra/core";
-import { Agent } from "@mastra/core";
+import { Mastra } from "@mastra/core/mastra";
+import { PinoLogger } from "@mastra/loggers";
+import { LibSQLStore } from "@mastra/libsql";
+import { taskTrackerAgent } from "./agents/task-tracker-agent";
 
-// Minimal agent configuration to avoid bundler issues
-const taskTrackerAgent = new Agent({
-  name: "TaskTracker",
-  instructions: "You are a helpful task tracking assistant.",
-  model: {
-    provider: "groq",
-    name: "llama-3.1-70b-versatile",
-  } as any,
-});
-
-// Minimal Mastra configuration without problematic modules
 export const mastra = new Mastra({
   agents: {
-    taskTracker: taskTrackerAgent,
+    taskTrackerAgent,
   },
-  // Remove any logger or storage configurations that cause circular deps
+  storage: new LibSQLStore({
+    // stores observability, scores, ... into memory storage, if it needs to persist, change to file:../mastra.db
+    url: ":memory:",
+  }),
+  logger: new PinoLogger({
+    name: "Mastra",
+    level: "info",
+  }),
+  telemetry: {
+    // Telemetry is deprecated and will be removed in the Nov 4th release
+    enabled: false,
+  },
+  observability: {
+    // Enables DefaultExporter and CloudExporter for AI tracing
+    default: { enabled: true },
+  },
 });
-
-export default mastra;
